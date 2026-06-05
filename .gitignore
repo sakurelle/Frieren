@@ -1,3 +1,30 @@
 *.stp
 *.stl
 *.bak
+
+# PlatformIO / ESP-IDF build output
+.pio/
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+ninja*.log
+.ninja_*
+
+# ESP-IDF generated local config files
+sdkconfig
+sdkconfig.old
+sdkconfig.defaults
+
+# Generated embedded web asset
+src/index.html.S
+
+# IDE / editor files
+.vscode/
+.idea/
+*.code-workspace
+
+# OS junk
+.DS_Store
+Thumbs.db

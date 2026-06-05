@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Frieren Light Control</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg-top: #f7efe4;
+      --bg-bottom: #d9e4ef;
+      --panel: rgba(255, 250, 244, 0.9);
+      --panel-border: rgba(90, 72, 51, 0.12);
+      --text: #2f251d;
+      --muted: #6a5a4a;
+      --accent: #d7772d;
+      --accent-dark: #9f4f16;
+      --ok: #2f8f63;
+      --warn: #cc7a00;
+      --shadow: 0 20px 45px rgba(73, 56, 37, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(255, 217, 167, 0.55), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(144, 190, 224, 0.45), transparent 30%),
+        linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      width: min(720px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      backdrop-filter: blur(10px);
+    }
+
+    .hero {
+      padding: 28px 28px 18px;
+      background:
+        linear-gradient(135deg, rgba(255, 184, 108, 0.22), transparent 60%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0));
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2rem, 4vw, 2.8rem);
+      letter-spacing: 0.04em;
+    }
+
+    .subtitle {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.5;
+    }
+
+    .content {
+      padding: 0 28px 28px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      background: rgba(255, 255, 255, 0.56);
+      border: 1px solid rgba(108, 89, 67, 0.08);
+      border-radius: 18px;
+      padding: 18px;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+    }
+
+    .status-item {
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(108, 89, 67, 0.08);
+    }
+
+    .label {
+      display: block;
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .value {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: #5f6670;
+      background: rgba(120, 130, 144, 0.14);
+    }
+
+    .pill.ok {
+      color: #0f5d39;
+      background: rgba(90, 190, 130, 0.16);
+    }
+
+    .pill.warn {
+      color: #8a4d00;
+      background: rgba(221, 165, 60, 0.17);
+    }
+
+    .controls {
+      display: grid;
+      gap: 16px;
+    }
+
+    .row {
+      display: grid;
+      gap: 10px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    select,
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 14px;
+      padding: 14px 16px;
+      font-size: 1rem;
+    }
+
+    select {
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--text);
+      border: 1px solid rgba(108, 89, 67, 0.12);
+    }
+
+    button {
+      background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 140ms ease, box-shadow 140ms ease;
+      box-shadow: 0 14px 28px rgba(159, 79, 22, 0.22);
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 30px rgba(159, 79, 22, 0.28);
+    }
+
+    button:disabled {
+      cursor: progress;
+      opacity: 0.7;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .footer {
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 560px) {
+      .hero,
+      .content {
+        padding-left: 18px;
+        padding-right: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <section class="hero">
+      <h1>Frieren</h1>
+      <div class="subtitle">Управление светодиодной лентой через ESP32-C3 SoftAP.</div>
+    </section>
+
+    <section class="content">
+      <div class="panel">
+        <div class="status-grid">
+          <div class="status-item">
+            <span class="label">Режим</span>
+            <div class="value" id="modeValue">-</div>
+          </div>
+          <div class="status-item">
+            <span class="label">USB 5V</span>
+            <div id="usbValue" class="pill">-</div>
+          </div>
+          <div class="status-item">
+            <span class="label">Ключ</span>
+            <div id="keyValue" class="pill">-</div>
+          </div>
+          <div class="status-item">
+            <span class="label">Свет</span>
+            <div id="lightValue" class="pill">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel controls">
+        <div class="row">
+          <label class="label" for="brightness">Яркость</label>
+          <div class="value" id="brightnessValue">0%</div>
+          <input id="brightness" type="range" min="0" max="100" value="0">
+        </div>
+
+        <div class="row">
+          <label class="label" for="effect">Эффект</label>
+          <select id="effect">
+            <option value="static">Static</option>
+            <option value="breath">Breath</option>
+            <option value="dragon_breath">Dragon Breath</option>
+            <option value="candle">Candle</option>
+            <option value="fire_flicker">Fire Flicker</option>
+            <option value="strobe">Strobe</option>
+            <option value="pulse">Pulse</option>
+            <option value="heartbeat">Heartbeat</option>
+            <option value="fade_in_out">Fade In/Out</option>
+          </select>
+        </div>
+
+        <button id="applyButton" type="button">Применить настройки</button>
+      </div>
+
+      <div class="panel footer" id="footerText">
+        Подключитесь к Wi-Fi сети <strong>Frieren</strong> и откройте <strong>http://192.168.1.4/</strong>.
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const brightness = document.getElementById("brightness");
+    const brightnessValue = document.getElementById("brightnessValue");
+    const effect = document.getElementById("effect");
+    const applyButton = document.getElementById("applyButton");
+
+    const modeValue = document.getElementById("modeValue");
+    const usbValue = document.getElementById("usbValue");
+    const keyValue = document.getElementById("keyValue");
+    const lightValue = document.getElementById("lightValue");
+    const footerText = document.getElementById("footerText");
+
+    function setPill(element, active, activeText, inactiveText, activeClass) {
+      element.className = "pill" + (active ? ` ${activeClass}` : "");
+      element.textContent = active ? activeText : inactiveText;
+    }
+
+    function updateBrightnessLabel() {
+      brightnessValue.textContent = `${brightness.value}%`;
+    }
+
+    function applyStatus(data) {
+      modeValue.textContent = data.mode || "-";
+      setPill(usbValue, data.usb_present, "USB present", "USB absent", "warn");
+      setPill(keyValue, data.key_inserted, "Inserted", "Not inserted", "ok");
+      setPill(lightValue, data.light_enabled, "ON", "OFF", "ok");
+
+      brightness.value = data.brightness;
+      effect.value = data.effect;
+      updateBrightnessLabel();
+
+      if (data.mode === "CHARGE") {
+        footerText.textContent = "Режим CHARGE: подключено внешнее USB 5V, лента принудительно выключена.";
+      } else if (data.mode === "KEY_ACTIVE") {
+        footerText.textContent = "Режим KEY_ACTIVE: ключ вставлен, лента работает по выбранному эффекту.";
+      } else {
+        footerText.textContent = "Режим IDLE: зарядка и ключ отсутствуют, лента выключена.";
+      }
+    }
+
+    async function requestJson(url) {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `HTTP ${response.status}`);
+      }
+      return response.json();
+    }
+
+    async function refreshStatus() {
+      try {
+        const data = await requestJson("/api/status");
+        applyStatus(data);
+      } catch (error) {
+        footerText.textContent = `Ошибка связи: ${error.message}`;
+      }
+    }
+
+    async function applySettings() {
+      applyButton.disabled = true;
+      try {
+        const params = new URLSearchParams({
+          brightness: brightness.value,
+          effect: effect.value
+        });
+        const data = await requestJson(`/api/set?${params.toString()}`);
+        applyStatus(data);
+      } catch (error) {
+        footerText.textContent = `Не удалось применить настройки: ${error.message}`;
+      } finally {
+        applyButton.disabled = false;
+      }
+    }
+
+    brightness.addEventListener("input", updateBrightnessLabel);
+    applyButton.addEventListener("click", applySettings);
+
+    updateBrightnessLabel();
+    refreshStatus();
+    window.setInterval(refreshStatus, 2000);
+  </script>
+</body>
+</html>
