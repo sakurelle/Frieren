@@ -104,6 +104,7 @@ esp_err_t app_state_init(void)
     s_state.mode = MODE_IDLE;
     s_state.brightness = 70;
     s_state.effect = EFFECT_STATIC;
+    s_state.boost_enabled = false;
 
     load_settings();
 
@@ -181,6 +182,18 @@ esp_err_t app_state_set_settings(int brightness, light_effect_t effect, bool has
     }
 
     return save_err;
+}
+
+void app_state_set_boost_enabled(bool boost_enabled)
+{
+    if (s_state_mutex == NULL) {
+        return;
+    }
+
+    if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+        s_state.boost_enabled = boost_enabled;
+        xSemaphoreGive(s_state_mutex);
+    }
 }
 
 const char *app_state_mode_to_string(app_mode_t mode)

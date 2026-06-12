@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -38,7 +38,7 @@
     }
 
     .card {
-      width: min(720px, 100%);
+      width: min(860px, 100%);
       background: var(--panel);
       border: 1px solid var(--panel-border);
       border-radius: 24px;
@@ -105,6 +105,7 @@
     .value {
       font-size: 1.1rem;
       font-weight: 700;
+      overflow-wrap: anywhere;
     }
 
     .pill {
@@ -199,14 +200,14 @@
   <main class="card">
     <section class="hero">
       <h1>Frieren</h1>
-      <div class="subtitle">Управление светодиодной лентой через ESP32-C3 SoftAP.</div>
+      <div class="subtitle">ESP32-C3 LED strip control over Wi-Fi with SX1308 enable and PWM on IRLZ44N.</div>
     </section>
 
     <section class="content">
       <div class="panel">
         <div class="status-grid">
           <div class="status-item">
-            <span class="label">Режим</span>
+            <span class="label">Mode</span>
             <div class="value" id="modeValue">-</div>
           </div>
           <div class="status-item">
@@ -214,25 +215,37 @@
             <div id="usbValue" class="pill">-</div>
           </div>
           <div class="status-item">
-            <span class="label">Ключ</span>
+            <span class="label">Key</span>
             <div id="keyValue" class="pill">-</div>
           </div>
           <div class="status-item">
-            <span class="label">Свет</span>
+            <span class="label">Light</span>
             <div id="lightValue" class="pill">-</div>
+          </div>
+          <div class="status-item">
+            <span class="label">Boost EN</span>
+            <div id="boostValue" class="pill">-</div>
+          </div>
+          <div class="status-item">
+            <span class="label">PWM Available</span>
+            <div id="pwmValue" class="pill">-</div>
+          </div>
+          <div class="status-item">
+            <span class="label">Hardware Mode</span>
+            <div class="value" id="hardwareModeValue">-</div>
           </div>
         </div>
       </div>
 
       <div class="panel controls">
         <div class="row">
-          <label class="label" for="brightness">Яркость</label>
+          <label class="label" for="brightness">Brightness</label>
           <div class="value" id="brightnessValue">0%</div>
           <input id="brightness" type="range" min="0" max="100" value="0">
         </div>
 
         <div class="row">
-          <label class="label" for="effect">Эффект</label>
+          <label class="label" for="effect">Effect</label>
           <select id="effect">
             <option value="static">Static</option>
             <option value="breath">Breath</option>
@@ -246,11 +259,11 @@
           </select>
         </div>
 
-        <button id="applyButton" type="button">Применить настройки</button>
+        <button id="applyButton" type="button">Apply Settings</button>
       </div>
 
       <div class="panel footer" id="footerText">
-        Подключитесь к Wi-Fi сети <strong>Frieren</strong> и откройте <strong>http://192.168.1.4/</strong>.
+        Connect to Wi-Fi <strong>Frieren</strong> with password <strong>Frieren1</strong> and open <strong>http://192.168.1.4/</strong>.
       </div>
     </section>
   </main>
@@ -265,6 +278,9 @@
     const usbValue = document.getElementById("usbValue");
     const keyValue = document.getElementById("keyValue");
     const lightValue = document.getElementById("lightValue");
+    const boostValue = document.getElementById("boostValue");
+    const pwmValue = document.getElementById("pwmValue");
+    const hardwareModeValue = document.getElementById("hardwareModeValue");
     const footerText = document.getElementById("footerText");
 
     function setPill(element, active, activeText, inactiveText, activeClass) {
@@ -278,20 +294,24 @@
 
     function applyStatus(data) {
       modeValue.textContent = data.mode || "-";
-      setPill(usbValue, data.usb_present, "USB present", "USB absent", "warn");
+      hardwareModeValue.textContent = data.hardware_mode || "-";
+
+      setPill(usbValue, data.usb_present, "Present", "Absent", "warn");
       setPill(keyValue, data.key_inserted, "Inserted", "Not inserted", "ok");
       setPill(lightValue, data.light_enabled, "ON", "OFF", "ok");
+      setPill(boostValue, data.boost_enabled, "Enabled", "Disabled", "ok");
+      setPill(pwmValue, data.pwm_available, "Yes", "No", "ok");
 
       brightness.value = data.brightness;
       effect.value = data.effect;
       updateBrightnessLabel();
 
       if (data.mode === "CHARGE") {
-        footerText.textContent = "Режим CHARGE: подключено внешнее USB 5V, лента принудительно выключена.";
+        footerText.textContent = "CHARGE mode: external USB 5V detected, boost converter is off and the strip stays disabled.";
       } else if (data.mode === "KEY_ACTIVE") {
-        footerText.textContent = "Режим KEY_ACTIVE: ключ вставлен, лента работает по выбранному эффекту.";
+        footerText.textContent = "KEY_ACTIVE mode: key detected, SX1308 is enabled and effects run on GPIO6 PWM.";
       } else {
-        footerText.textContent = "Режим IDLE: зарядка и ключ отсутствуют, лента выключена.";
+        footerText.textContent = "IDLE mode: no charger and no key, boost converter is off and the strip stays disabled.";
       }
     }
 
@@ -309,7 +329,7 @@
         const data = await requestJson("/api/status");
         applyStatus(data);
       } catch (error) {
-        footerText.textContent = `Ошибка связи: ${error.message}`;
+        footerText.textContent = `Communication error: ${error.message}`;
       }
     }
 
@@ -323,7 +343,7 @@
         const data = await requestJson(`/api/set?${params.toString()}`);
         applyStatus(data);
       } catch (error) {
-        footerText.textContent = `Не удалось применить настройки: ${error.message}`;
+        footerText.textContent = `Failed to apply settings: ${error.message}`;
       } finally {
         applyButton.disabled = false;
       }

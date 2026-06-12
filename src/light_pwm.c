@@ -33,7 +33,7 @@ esp_err_t light_pwm_init(void)
     }
 
     ledc_channel_config_t channel_config = {
-        .gpio_num = APP_GPIO_LIGHT_PWM,
+        .gpio_num = APP_GPIO_LED_PWM,
         .speed_mode = APP_PWM_MODE,
         .channel = APP_PWM_CHANNEL,
         .intr_type = LEDC_INTR_DISABLE,

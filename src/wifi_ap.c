@@ -11,6 +11,11 @@
 static const char *TAG = "wifi_ap";
 static esp_netif_t *s_ap_netif;
 
+static bool wifi_password_is_configured(void)
+{
+    return APP_SOFTAP_PASSWORD[0] != '\0';
+}
+
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     (void)arg;
@@ -79,13 +84,20 @@ esp_err_t wifi_ap_start(void)
         .ap = {
             .channel = 1,
             .max_connection = APP_WIFI_MAX_CONNECTIONS,
-            .authmode = WIFI_AUTH_OPEN,
+            .authmode = WIFI_AUTH_WPA2_PSK,
             .ssid_hidden = 0
         }
     };
 
     memcpy(wifi_config.ap.ssid, APP_SOFTAP_SSID, strlen(APP_SOFTAP_SSID));
     wifi_config.ap.ssid_len = strlen(APP_SOFTAP_SSID);
+
+    if (wifi_password_is_configured()) {
+        memcpy(wifi_config.ap.password, APP_SOFTAP_PASSWORD, strlen(APP_SOFTAP_PASSWORD));
+        wifi_config.ap.authmode = WIFI_AUTH_WPA2_PSK;
+    } else {
+        wifi_config.ap.authmode = WIFI_AUTH_OPEN;
+    }
 
     err = esp_wifi_set_mode(WIFI_MODE_AP);
     if (err != ESP_OK) {
@@ -102,7 +114,11 @@ esp_err_t wifi_ap_start(void)
         return err;
     }
 
-    ESP_LOGI(TAG, "SoftAP started: SSID=%s IP=%s", APP_SOFTAP_SSID, APP_SOFTAP_IP);
+    ESP_LOGI(TAG,
+             "SoftAP started: SSID=%s auth=%s IP=%s",
+             APP_SOFTAP_SSID,
+             wifi_password_is_configured() ? "WPA2-PSK" : "OPEN",
+             APP_SOFTAP_IP);
     return ESP_OK;
 }
 

@@ -20,17 +20,22 @@ static esp_err_t send_status_json(httpd_req_t *req)
     app_state_snapshot_t snapshot;
     app_state_get_snapshot(&snapshot);
 
-    char body[256];
+    char body[384];
     int written = snprintf(
         body,
         sizeof(body),
-        "{\"mode\":\"%s\",\"usb_present\":%s,\"key_inserted\":%s,\"light_enabled\":%s,\"brightness\":%u,\"effect\":\"%s\"}",
+        "{\"mode\":\"%s\",\"usb_present\":%s,\"key_inserted\":%s,\"light_enabled\":%s,"
+        "\"brightness\":%u,\"effect\":\"%s\",\"pwm_available\":%s,"
+        "\"hardware_mode\":\"%s\",\"boost_enabled\":%s}",
         app_state_mode_to_string(snapshot.mode),
         snapshot.usb_present ? "true" : "false",
         snapshot.key_inserted ? "true" : "false",
         snapshot.light_enabled ? "true" : "false",
         snapshot.brightness,
-        app_state_effect_to_string(snapshot.effect)
+        app_state_effect_to_string(snapshot.effect),
+        APP_LED_PWM_AVAILABLE ? "true" : "false",
+        APP_HARDWARE_MODE,
+        snapshot.boost_enabled ? "true" : "false"
     );
 
     if (written < 0 || written >= (int)sizeof(body)) {

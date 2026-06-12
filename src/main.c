@@ -1,140 +1,129 @@
 #include <stdio.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/gpio.h"
+
+#include "esp_err.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
 
-#define GPIO_KEY_SENSE      GPIO_NUM_5
-#define GPIO_USB_PRESENT    GPIO_NUM_7
-#define GPIO_MOSFET_GATE    GPIO_NUM_6
+#include "app_config.h"
+#include "app_state.h"
+#include "effects.h"
+#include "gpio_hw.h"
+#include "light_pwm.h"
+#include "web_server.h"
+#include "wifi_ap.h"
 
-static const char *TAG = "TYPEC_CTRL";
+static const char *TAG = "frieren_main";
 
-static int read_key_inserted(void)
+static esp_err_t init_nvs(void)
 {
-    return gpio_get_level(GPIO_KEY_SENSE) == 0;
+    esp_err_t err = nvs_flash_init();
+
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+
+    return err;
 }
 
-static int read_usb_present(void)
+static void log_snapshot(const char *prefix)
 {
-    return gpio_get_level(GPIO_USB_PRESENT) == 1;
-}
+    app_state_snapshot_t snapshot;
+    app_state_get_snapshot(&snapshot);
 
-static void set_light_power(int enabled)
-{
-    gpio_set_level(GPIO_MOSFET_GATE, enabled ? 1 : 0);
-}
-
-static void print_status(int key_inserted, int usb_present, int light_enabled)
-{
     ESP_LOGI(TAG,
-             "STATUS: USB_5V=%s | KEY=%s | LIGHT=%s | MODE=%s",
-             usb_present ? "PRESENT" : "ABSENT",
-             key_inserted ? "INSERTED" : "REMOVED",
-             light_enabled ? "ON" : "OFF",
-             usb_present ? "CHARGING_KEY_IGNORED" :
-             key_inserted ? "KEY_ACTIVE" : "IDLE");
+             "%s mode=%s usb=%s key=%s boost=%s light=%s brightness=%u effect=%s",
+             prefix,
+             app_state_mode_to_string(snapshot.mode),
+             snapshot.usb_present ? "PRESENT" : "ABSENT",
+             snapshot.key_inserted ? "INSERTED" : "REMOVED",
+             snapshot.boost_enabled ? "ENABLED" : "DISABLED",
+             snapshot.light_enabled ? "ON" : "OFF",
+             snapshot.brightness,
+             app_state_effect_to_string(snapshot.effect));
 }
 
-static void configure_gpio(void)
+static void inputs_task(void *arg)
 {
-    gpio_config_t key_cfg = {
-        .pin_bit_mask = 1ULL << GPIO_KEY_SENSE,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
+    (void)arg;
 
-    gpio_config_t usb_cfg = {
-        .pin_bit_mask = 1ULL << GPIO_USB_PRESENT,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
+    app_mode_t prev_mode = MODE_IDLE;
+    app_mode_t current_mode = MODE_IDLE;
 
-    gpio_config_t mosfet_cfg = {
-        .pin_bit_mask = 1ULL << GPIO_MOSFET_GATE,
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
+    while (true) {
+        bool usb_present = gpio_hw_is_usb_present();
+        bool key_inserted = gpio_hw_is_key_inserted();
 
-    gpio_config(&key_cfg);
-    gpio_config(&usb_cfg);
-    gpio_config(&mosfet_cfg);
+        bool mode_changed = app_state_update_inputs(
+            usb_present,
+            key_inserted,
+            &prev_mode,
+            &current_mode
+        );
 
-    set_light_power(0);
+        if (mode_changed) {
+            ESP_LOGI(TAG,
+                     "MODE changed: %s -> %s",
+                     app_state_mode_to_string(prev_mode),
+                     app_state_mode_to_string(current_mode));
+
+            log_snapshot("STATE:");
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(APP_INPUT_POLL_PERIOD_MS));
+    }
 }
 
 void app_main(void)
 {
-    configure_gpio();
+    ESP_LOGI(TAG, "Starting %s", APP_PROJECT_NAME);
+    ESP_LOGI(TAG, "Hardware mode: %s", APP_HARDWARE_MODE);
+    ESP_LOGI(TAG, "Configured Web UI IP: http://%s/", APP_SOFTAP_IP);
 
-    ESP_LOGI(TAG, "ESP32-C3 Type-C key + charging detection + IRLZ44N LED control");
-    ESP_LOGI(TAG, "GPIO5 <- Type-C D+");
-    ESP_LOGI(TAG, "GPIO7 <- Type-C 5V divider");
-    ESP_LOGI(TAG, "GPIO6 -> IRLZ44N Gate");
+    ESP_ERROR_CHECK(init_nvs());
+    ESP_ERROR_CHECK(app_state_init());
+    ESP_ERROR_CHECK(gpio_hw_init());
+    ESP_ERROR_CHECK(light_pwm_init());
 
-    int stable_key = read_key_inserted();
-    int stable_usb = read_usb_present();
+    bool usb_present = gpio_hw_is_usb_present();
+    bool key_inserted = gpio_hw_is_key_inserted();
 
-    int light_enabled = (!stable_usb && stable_key);
-    set_light_power(light_enabled);
-    print_status(stable_key, stable_usb, light_enabled);
+    app_state_update_inputs(usb_present, key_inserted, NULL, NULL);
+    log_snapshot("Initial state:");
 
-    int seconds = 0;
+    ESP_ERROR_CHECK(wifi_ap_start());
+    ESP_ERROR_CHECK(web_server_start());
+    ESP_ERROR_CHECK(effects_start());
 
-    while (1) {
-        int current_key = read_key_inserted();
-        int current_usb = read_usb_present();
+    ESP_LOGI(TAG, "Wi-Fi AP SSID: %s", APP_SOFTAP_SSID);
+    ESP_LOGI(TAG, "Wi-Fi password: %s", APP_SOFTAP_PASSWORD);
+    ESP_LOGI(TAG, "Web UI: http://%s/", wifi_ap_get_ip_string());
+    ESP_LOGI(TAG,
+             "GPIO key=%d usb=%d led_pwm=%d boost_en=%d",
+             APP_GPIO_KEY_SENSE,
+             APP_GPIO_USB_PRESENT,
+             APP_GPIO_LED_PWM,
+             APP_GPIO_BOOST_EN);
 
-        if (current_key != stable_key || current_usb != stable_usb) {
-            vTaskDelay(pdMS_TO_TICKS(150));
+    BaseType_t task_result = xTaskCreate(
+        inputs_task,
+        "inputs_task",
+        3072,
+        NULL,
+        6,
+        NULL
+    );
 
-            current_key = read_key_inserted();
-            current_usb = read_usb_present();
+    if (task_result != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create inputs_task");
+        abort();
+    }
 
-            if (current_key != stable_key || current_usb != stable_usb) {
-                stable_key = current_key;
-                stable_usb = current_usb;
-
-                light_enabled = (!stable_usb && stable_key);
-                set_light_power(light_enabled);
-
-                if (stable_usb) {
-                    ESP_LOGI(TAG, "USB POWER PRESENT: charging input connected");
-                    ESP_LOGI(TAG, "Light disabled while charging input is present");
-                } else {
-                    ESP_LOGI(TAG, "USB POWER ABSENT");
-
-                    if (stable_key) {
-                        ESP_LOGI(TAG, "KEY INSERTED: IRLZ44N ON, LED should turn ON");
-                    } else {
-                        ESP_LOGI(TAG, "KEY REMOVED: IRLZ44N OFF, LED should turn OFF");
-                    }
-                }
-
-                print_status(stable_key, stable_usb, light_enabled);
-            }
-        }
-
-        seconds++;
-
-        if (seconds >= 5) {
-            seconds = 0;
-
-            stable_key = read_key_inserted();
-            stable_usb = read_usb_present();
-
-            light_enabled = (!stable_usb && stable_key);
-            set_light_power(light_enabled);
-
-            print_status(stable_key, stable_usb, light_enabled);
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(1000));
+    while (true) {
+        log_snapshot("Periodic:");
+        vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }
