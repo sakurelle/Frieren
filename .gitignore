@@ -1,6 +1,7 @@
 *.stp
 *.stl
 *.bak
+*.m3~
 
 # PlatformIO / ESP-IDF build output
 .pio/
