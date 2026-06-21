@@ -200,7 +200,7 @@
   <main class="card">
     <section class="hero">
       <h1>Frieren</h1>
-      <div class="subtitle">ESP32-C3 LED strip control over Wi-Fi with SX1308 enable and PWM on IRLZ44N.</div>
+      <div class="subtitle">ESP32-C3 LED strip control over Wi-Fi with direct battery power and PWM on IRLZ44N.</div>
     </section>
 
     <section class="content">
@@ -223,12 +223,12 @@
             <div id="lightValue" class="pill">-</div>
           </div>
           <div class="status-item">
-            <span class="label">Boost EN</span>
-            <div id="boostValue" class="pill">-</div>
-          </div>
-          <div class="status-item">
             <span class="label">PWM Available</span>
             <div id="pwmValue" class="pill">-</div>
+          </div>
+          <div class="status-item">
+            <span class="label">Deep Sleep</span>
+            <div id="sleepValue" class="pill">-</div>
           </div>
           <div class="status-item">
             <span class="label">Hardware Mode</span>
@@ -278,8 +278,8 @@
     const usbValue = document.getElementById("usbValue");
     const keyValue = document.getElementById("keyValue");
     const lightValue = document.getElementById("lightValue");
-    const boostValue = document.getElementById("boostValue");
     const pwmValue = document.getElementById("pwmValue");
+    const sleepValue = document.getElementById("sleepValue");
     const hardwareModeValue = document.getElementById("hardwareModeValue");
     const footerText = document.getElementById("footerText");
 
@@ -299,19 +299,19 @@
       setPill(usbValue, data.usb_present, "Present", "Absent", "warn");
       setPill(keyValue, data.key_inserted, "Inserted", "Not inserted", "ok");
       setPill(lightValue, data.light_enabled, "ON", "OFF", "ok");
-      setPill(boostValue, data.boost_enabled, "Enabled", "Disabled", "ok");
       setPill(pwmValue, data.pwm_available, "Yes", "No", "ok");
+      setPill(sleepValue, data.deep_sleep_enabled, "Enabled", "Disabled", "ok");
 
       brightness.value = data.brightness;
       effect.value = data.effect;
       updateBrightnessLabel();
 
       if (data.mode === "CHARGE") {
-        footerText.textContent = "CHARGE mode: external USB 5V detected, boost converter is off and the strip stays disabled.";
+        footerText.textContent = "CHARGE mode: external USB 5V detected, the strip is forced off but the web interface stays available.";
       } else if (data.mode === "KEY_ACTIVE") {
-        footerText.textContent = "KEY_ACTIVE mode: key detected, SX1308 is enabled and effects run on GPIO6 PWM.";
+        footerText.textContent = "KEY_ACTIVE mode: key detected, effects run on GPIO6 PWM and strip brightness follows battery voltage.";
       } else {
-        footerText.textContent = "IDLE mode: no charger and no key, boost converter is off and the strip stays disabled.";
+        footerText.textContent = "IDLE mode: no charger and no key, the strip is off and the device will enter deep sleep after a short delay.";
       }
     }
 

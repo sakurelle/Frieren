@@ -26,7 +26,7 @@ static esp_err_t send_status_json(httpd_req_t *req)
         sizeof(body),
         "{\"mode\":\"%s\",\"usb_present\":%s,\"key_inserted\":%s,\"light_enabled\":%s,"
         "\"brightness\":%u,\"effect\":\"%s\",\"pwm_available\":%s,"
-        "\"hardware_mode\":\"%s\",\"boost_enabled\":%s}",
+        "\"hardware_mode\":\"%s\",\"deep_sleep_enabled\":%s}",
         app_state_mode_to_string(snapshot.mode),
         snapshot.usb_present ? "true" : "false",
         snapshot.key_inserted ? "true" : "false",
@@ -35,7 +35,7 @@ static esp_err_t send_status_json(httpd_req_t *req)
         app_state_effect_to_string(snapshot.effect),
         APP_LED_PWM_AVAILABLE ? "true" : "false",
         APP_HARDWARE_MODE,
-        snapshot.boost_enabled ? "true" : "false"
+        APP_DEEP_SLEEP_ENABLED ? "true" : "false"
     );
 
     if (written < 0 || written >= (int)sizeof(body)) {
@@ -169,4 +169,19 @@ esp_err_t web_server_start(void)
 
     ESP_LOGI(TAG, "HTTP server started on port %d", APP_HTTP_PORT);
     return ESP_OK;
+}
+
+esp_err_t web_server_stop(void)
+{
+    if (s_server == NULL) {
+        return ESP_OK;
+    }
+
+    esp_err_t err = httpd_stop(s_server);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "HTTP server stopped");
+        s_server = NULL;
+    }
+
+    return err;
 }

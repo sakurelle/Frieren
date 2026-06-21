@@ -1,15 +1,19 @@
 #include "wifi_ap.h"
 
+#include <stdbool.h>
 #include <string.h>
 #include "app_config.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "esp_wifi_default.h"
 #include "lwip/ip4_addr.h"
 
 static const char *TAG = "wifi_ap";
 static esp_netif_t *s_ap_netif;
+static bool s_wifi_started;
+static bool s_wifi_handler_registered;
 
 static bool wifi_password_is_configured(void)
 {
@@ -34,6 +38,10 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
 esp_err_t wifi_ap_start(void)
 {
+    if (s_wifi_started) {
+        return ESP_OK;
+    }
+
     esp_err_t err = esp_netif_init();
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         return err;
@@ -44,7 +52,9 @@ esp_err_t wifi_ap_start(void)
         return err;
     }
 
-    s_ap_netif = esp_netif_create_default_wifi_ap();
+    if (s_ap_netif == NULL) {
+        s_ap_netif = esp_netif_create_default_wifi_ap();
+    }
     if (s_ap_netif == NULL) {
         return ESP_FAIL;
     }
@@ -79,6 +89,7 @@ esp_err_t wifi_ap_start(void)
     if (err != ESP_OK) {
         return err;
     }
+    s_wifi_handler_registered = true;
 
     wifi_config_t wifi_config = {
         .ap = {
@@ -114,12 +125,55 @@ esp_err_t wifi_ap_start(void)
         return err;
     }
 
+    s_wifi_started = true;
+
     ESP_LOGI(TAG,
              "SoftAP started: SSID=%s auth=%s IP=%s",
              APP_SOFTAP_SSID,
              wifi_password_is_configured() ? "WPA2-PSK" : "OPEN",
              APP_SOFTAP_IP);
     return ESP_OK;
+}
+
+esp_err_t wifi_ap_stop(void)
+{
+    esp_err_t result = ESP_OK;
+
+    if (s_wifi_handler_registered) {
+        esp_err_t err = esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler);
+        if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
+            result = err;
+        }
+        s_wifi_handler_registered = false;
+    }
+
+    esp_err_t err = esp_wifi_stop();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT && err != ESP_ERR_WIFI_NOT_STARTED) {
+        result = err;
+    }
+
+    err = esp_wifi_deinit();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
+        result = err;
+    }
+
+    if (s_ap_netif != NULL) {
+        esp_netif_destroy_default_wifi(s_ap_netif);
+        s_ap_netif = NULL;
+    }
+
+    err = esp_event_loop_delete_default();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        result = err;
+    }
+
+    s_wifi_started = false;
+
+    if (result == ESP_OK) {
+        ESP_LOGI(TAG, "SoftAP stopped");
+    }
+
+    return result;
 }
 
 const char *wifi_ap_get_ip_string(void)

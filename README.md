@@ -1,15 +1,17 @@
 # Frieren
 
-`Frieren` is an ESP32-C3 PlatformIO + ESP-IDF project for controlling a 5 V LED strip from a local Wi-Fi web interface. The firmware detects charging vs. key insertion, enables the SX1308 boost converter only when needed, and drives strip brightness/effects with LEDC PWM on the IRLZ44N gate.
+`Frieren` is an ESP32-C3 PlatformIO + ESP-IDF project for controlling a battery-powered LED strip from a local Wi-Fi web interface. The strip is powered directly from the battery path (`TP4056 OUT+ / OUT-`), while ESP32-C3 drives the IRLZ44N gate with LEDC PWM for brightness and effects.
 
 ## Hardware
 
 - Board: ESP32-C3 Super Mini
 - Framework: ESP-IDF via PlatformIO
 - Battery: 18650 through TP4056 and a 3.3 V regulator for ESP32
-- Boost converter: SX1308 with dedicated `EN` control
-- Strip switching: IRLZ44N on the LED strip ground line after the boost converter
+- LED strip power: directly from `TP4056 OUT+ / OUT-`
+- Strip switching: IRLZ44N on the LED strip ground line
 - A single external Type-C port is used either for charging detection or for the physical key
+
+Because the strip is now powered directly from the battery, its maximum brightness depends on the current battery voltage.
 
 ## GPIO wiring
 
@@ -23,18 +25,15 @@
   Type-C `5V` goes through a divider `100 kOhm / 150 kOhm`
   Divider midpoint goes to `GPIO7`
   If USB 5 V is present, `GPIO7 = HIGH`
-- `GPIO8` -> `EN` of SX1308
-  `GPIO8` goes to `EN` through `1 kOhm`
-  `EN` is pulled down to `GND` through `100 kOhm`
-  `GPIO8 = HIGH` enables the boost converter
-  `GPIO8 = LOW` disables the boost converter
+  The `150 kOhm` divider leg provides the external pull-down needed for wakeup by HIGH level
 - `GPIO6` -> IRLZ44N gate PWM for the LED strip
   `GPIO6` goes to Gate through `220 Ohm`
   Gate is pulled down to `GND` through `100 kOhm`
-  Source goes to common `GND`
+  Source goes to `TP4056 OUT-` / common `GND`
   Drain goes to LED strip minus
-  SX1308 `OUT+` goes to LED strip plus
-  IRLZ44N controls the strip low side after the boost converter
+  `TP4056 OUT+` goes to LED strip plus
+- `GPIO8`
+  Not used in the current hardware revision
 
 ## Project structure
 
@@ -68,16 +67,32 @@ Frieren/
 
 - `MODE_CHARGE`
   USB 5 V is present
-  Boost converter is off
   LED strip PWM is `0`
+  The strip is forced off
+  Web UI stays available while charging is connected
 - `MODE_KEY_ACTIVE`
   USB 5 V is absent and the Type-C key is inserted
-  Boost converter is enabled through `GPIO8`
-  After a short startup delay, the strip runs with the selected brightness and effect through PWM on `GPIO6`
+  The strip runs with the selected brightness and effect using PWM on `GPIO6`
 - `MODE_IDLE`
   USB 5 V is absent and the Type-C key is not inserted
-  Boost converter is off
   LED strip PWM is `0`
+  After `APP_SLEEP_DELAY_MS`, the device enters deep sleep
+
+## Deep sleep
+
+- Deep sleep is enabled in firmware by default
+- The device goes to sleep when nothing is inserted into Type-C and the mode becomes `MODE_IDLE`
+- Before sleep, firmware sets PWM to `0`, stops the HTTP server and stops Wi-Fi
+- Wakeup sources:
+  key insert -> `GPIO5 LOW`
+  charger insert -> `GPIO7 HIGH`
+
+Important notes:
+
+- `GPIO5` must keep the external `100 kOhm` pull-up to `3.3 V` because wakeup is triggered by LOW level
+- `GPIO7` relies on the divider lower resistor (`150 kOhm` to `GND`) as the external pull-down because wakeup is triggered by HIGH level
+- If `GPIO7` does not support deep sleep wakeup on your exact ESP32-C3 board or routing, move `USB_PRESENT` to another wakeup-capable GPIO or disable deep sleep by setting `APP_DEEP_SLEEP_ENABLED 0`
+- If wakeup GPIO validation fails at runtime, firmware logs the reason and intentionally stays awake instead of entering deep sleep
 
 ## Effects
 
@@ -108,11 +123,10 @@ Returned JSON:
   "usb_present": true,
   "key_inserted": false,
   "light_enabled": false,
-  "pwm_available": true,
-  "hardware_mode": "boost_en_and_led_pwm",
-  "boost_enabled": false,
   "brightness": 70,
-  "effect": "breath"
+  "effect": "breath",
+  "hardware_mode": "battery_direct_led_pwm",
+  "deep_sleep_enabled": true
 }
 ```
 
@@ -144,9 +158,3 @@ The project uses:
 - framework: `espidf`
 - monitor speed: `115200`
 - upload speed: `460800`
-
-## Notes
-
-- The firmware intentionally stays awake at this stage to keep flashing and serial debugging simple.
-- Deep sleep is intentionally not implemented yet and will be added in a separate step.
-- `GPIO8` on ESP32-C3 may be a strapping pin. If the board starts booting or flashing unreliably with SX1308 `EN` on `GPIO8`, move `EN` to another free GPIO such as `GPIO10` and update `APP_GPIO_BOOST_EN`.

@@ -5,13 +5,11 @@
 #include <stdint.h>
 #include "app_config.h"
 #include "app_state.h"
-#include "esp_err.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "gpio_hw.h"
 #include "light_pwm.h"
 
 static const char *TAG = "effects";
@@ -192,10 +190,8 @@ static void effects_task(void *arg)
 
     effect_context_t ctx;
     int64_t last_us = esp_timer_get_time();
-    int64_t boost_ready_us = 0;
     light_effect_t last_effect = EFFECT_COUNT;
     bool last_enabled = false;
-    bool boost_enabled = false;
 
     reset_context(&ctx, last_us);
 
@@ -214,41 +210,13 @@ static void effects_task(void *arg)
             reset_context(&ctx, now_us);
         }
 
-        if (snapshot.mode == MODE_KEY_ACTIVE && !boost_enabled) {
-            esp_err_t err = gpio_hw_set_boost_enabled(true);
-            if (err == ESP_OK) {
-                boost_enabled = true;
-                boost_ready_us = now_us + ((int64_t)APP_BOOST_STARTUP_DELAY_MS * 1000);
-                app_state_set_boost_enabled(true);
-                reset_context(&ctx, now_us);
-            } else {
-                app_state_set_boost_enabled(false);
-                ESP_LOGW(TAG, "Failed to enable boost: %s", esp_err_to_name(err));
-            }
-        }
-
         float output_percent = 0.0f;
-        if (snapshot.mode == MODE_KEY_ACTIVE &&
-            boost_enabled &&
-            now_us >= boost_ready_us &&
-            snapshot.light_enabled) {
+        if (snapshot.mode == MODE_KEY_ACTIVE && snapshot.light_enabled) {
             float factor = compute_effect(snapshot.effect, &ctx, now_us, dt_seconds);
             output_percent = snapshot.brightness * factor;
         }
 
         light_pwm_set_percent(output_percent);
-
-        if (snapshot.mode != MODE_KEY_ACTIVE && boost_enabled) {
-            esp_err_t err = gpio_hw_set_boost_enabled(false);
-            if (err == ESP_OK) {
-                boost_enabled = false;
-                boost_ready_us = 0;
-                app_state_set_boost_enabled(false);
-                reset_context(&ctx, now_us);
-            } else {
-                ESP_LOGW(TAG, "Failed to disable boost: %s", esp_err_to_name(err));
-            }
-        }
 
         last_effect = snapshot.effect;
         last_enabled = snapshot.light_enabled;
