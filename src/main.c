@@ -4,6 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "driver/gpio.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
@@ -84,6 +85,20 @@ static void log_wakeup_info(void)
     ESP_LOGI(TAG, "GPIO wakeup status mask: 0x%016" PRIx64, gpio_mask);
 }
 
+static void log_raw_gpio_levels(const char *prefix)
+{
+    int key_level = gpio_get_level(APP_GPIO_KEY_SENSE);
+    int usb_level = gpio_get_level(APP_GPIO_USB_PRESENT);
+
+    ESP_LOGI(TAG,
+             "%s raw GPIO levels: GPIO%d=%d GPIO%d=%d",
+             prefix,
+             APP_GPIO_KEY_SENSE,
+             key_level,
+             APP_GPIO_USB_PRESENT,
+             usb_level);
+}
+
 static void log_snapshot(const char *prefix)
 {
     app_state_snapshot_t snapshot;
@@ -100,14 +115,11 @@ static void log_snapshot(const char *prefix)
              app_state_effect_to_string(snapshot.effect));
 }
 
-static bool deep_sleep_wakeup_gpio_valid(gpio_num_t gpio_num, const char *label)
+static bool deep_sleep_wakeup_gpio_valid(gpio_num_t gpio_num)
 {
     bool valid = esp_sleep_is_valid_wakeup_gpio(gpio_num);
     if (!valid) {
-        ESP_LOGE(TAG,
-                 "%s GPIO%d is not valid for deep sleep wakeup on this target. Staying awake to avoid losing the board.",
-                 label,
-                 (int)gpio_num);
+        ESP_LOGE(TAG, "KEY_SENSE GPIO is not valid for deep sleep wakeup; deep sleep disabled");
     }
 
     return valid;
@@ -116,11 +128,7 @@ static bool deep_sleep_wakeup_gpio_valid(gpio_num_t gpio_num, const char *label)
 static bool prepare_gpio_wakeup(void)
 {
 #if APP_DEEP_SLEEP_ENABLED
-    if (!deep_sleep_wakeup_gpio_valid(APP_GPIO_KEY_SENSE, "KEY_SENSE")) {
-        return false;
-    }
-
-    if (!deep_sleep_wakeup_gpio_valid(APP_GPIO_USB_PRESENT, "USB_PRESENT")) {
+    if (!deep_sleep_wakeup_gpio_valid(APP_GPIO_KEY_SENSE)) {
         return false;
     }
 
@@ -133,12 +141,6 @@ static bool prepare_gpio_wakeup(void)
     err = esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(1ULL << APP_GPIO_KEY_SENSE, ESP_GPIO_WAKEUP_GPIO_LOW);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to enable GPIO%d LOW wakeup: %s", (int)APP_GPIO_KEY_SENSE, esp_err_to_name(err));
-        return false;
-    }
-
-    err = esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(1ULL << APP_GPIO_USB_PRESENT, ESP_GPIO_WAKEUP_GPIO_HIGH);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to enable GPIO%d HIGH wakeup: %s", (int)APP_GPIO_USB_PRESENT, esp_err_to_name(err));
         return false;
     }
 
@@ -155,6 +157,8 @@ static bool enter_deep_sleep_if_possible(void)
         return false;
     }
 
+    log_raw_gpio_levels("Before sleep:");
+
     esp_err_t err = light_pwm_set_percent(0.0f);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to set PWM to 0 before sleep: %s", esp_err_to_name(err));
@@ -170,10 +174,7 @@ static bool enter_deep_sleep_if_possible(void)
         ESP_LOGW(TAG, "Failed to stop Wi-Fi AP: %s", esp_err_to_name(err));
     }
 
-    ESP_LOGI(TAG,
-             "Entering deep sleep. Wakeup sources: GPIO%d LOW (key), GPIO%d HIGH (USB 5V)",
-             (int)APP_GPIO_KEY_SENSE,
-             (int)APP_GPIO_USB_PRESENT);
+    ESP_LOGI(TAG, "Entering deep sleep");
 
     vTaskDelay(pdMS_TO_TICKS(150));
     esp_deep_sleep_start();
@@ -231,6 +232,7 @@ void app_main(void)
     ESP_ERROR_CHECK(app_state_init());
     ESP_ERROR_CHECK(gpio_hw_init());
     ESP_ERROR_CHECK(light_pwm_init());
+    log_raw_gpio_levels("After wake:");
 
     bool usb_present = gpio_hw_is_usb_present();
     bool key_inserted = gpio_hw_is_key_inserted();

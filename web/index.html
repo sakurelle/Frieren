@@ -140,6 +140,23 @@
       gap: 10px;
     }
 
+    .settings-hint {
+      min-height: 1.4em;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.4;
+    }
+
+    .settings-hint.dirty {
+      color: var(--warn);
+      font-weight: 700;
+    }
+
+    .settings-hint.applied {
+      color: var(--ok);
+      font-weight: 700;
+    }
+
     input[type="range"] {
       width: 100%;
       accent-color: var(--accent);
@@ -174,6 +191,10 @@
       box-shadow: 0 18px 30px rgba(159, 79, 22, 0.28);
     }
 
+    button.dirty {
+      box-shadow: 0 0 0 3px rgba(215, 119, 45, 0.22), 0 18px 30px rgba(159, 79, 22, 0.28);
+    }
+
     button:disabled {
       cursor: progress;
       opacity: 0.7;
@@ -200,7 +221,7 @@
   <main class="card">
     <section class="hero">
       <h1>Frieren</h1>
-      <div class="subtitle">ESP32-C3 LED strip control over Wi-Fi with direct battery power and PWM on IRLZ44N.</div>
+      <div class="subtitle">ESP32-C3 LED strip control over Wi-Fi with direct battery power and slow, smooth PWM effects on IRLZ44N.</div>
     </section>
 
     <section class="content">
@@ -231,6 +252,10 @@
             <div id="sleepValue" class="pill">-</div>
           </div>
           <div class="status-item">
+            <span class="label">Charger Wakeup</span>
+            <div id="chargerWakeupValue" class="pill">-</div>
+          </div>
+          <div class="status-item">
             <span class="label">Hardware Mode</span>
             <div class="value" id="hardwareModeValue">-</div>
           </div>
@@ -259,6 +284,7 @@
           </select>
         </div>
 
+        <div id="settingsHint" class="settings-hint"></div>
         <button id="applyButton" type="button">Apply Settings</button>
       </div>
 
@@ -280,8 +306,12 @@
     const lightValue = document.getElementById("lightValue");
     const pwmValue = document.getElementById("pwmValue");
     const sleepValue = document.getElementById("sleepValue");
+    const chargerWakeupValue = document.getElementById("chargerWakeupValue");
     const hardwareModeValue = document.getElementById("hardwareModeValue");
+    const settingsHint = document.getElementById("settingsHint");
     const footerText = document.getElementById("footerText");
+
+    let settingsDirty = false;
 
     function setPill(element, active, activeText, inactiveText, activeClass) {
       element.className = "pill" + (active ? ` ${activeClass}` : "");
@@ -292,7 +322,26 @@
       brightnessValue.textContent = `${brightness.value}%`;
     }
 
-    function applyStatus(data) {
+    function updateDirtyUi(message = "") {
+      if (settingsDirty) {
+        applyButton.textContent = "Apply Settings *";
+        applyButton.classList.add("dirty");
+        settingsHint.className = "settings-hint dirty";
+        settingsHint.textContent = message || "Unsaved changes — press Apply Settings";
+      } else {
+        applyButton.textContent = "Apply Settings";
+        applyButton.classList.remove("dirty");
+        settingsHint.className = message ? "settings-hint applied" : "settings-hint";
+        settingsHint.textContent = message;
+      }
+    }
+
+    function markSettingsDirty() {
+      settingsDirty = true;
+      updateDirtyUi();
+    }
+
+    function applyStatus(data, { forceControls = false } = {}) {
       modeValue.textContent = data.mode || "-";
       hardwareModeValue.textContent = data.hardware_mode || "-";
 
@@ -301,17 +350,20 @@
       setPill(lightValue, data.light_enabled, "ON", "OFF", "ok");
       setPill(pwmValue, data.pwm_available, "Yes", "No", "ok");
       setPill(sleepValue, data.deep_sleep_enabled, "Enabled", "Disabled", "ok");
+      setPill(chargerWakeupValue, data.charger_wakeup_enabled, "Enabled", "Disabled", "warn");
 
-      brightness.value = data.brightness;
-      effect.value = data.effect;
-      updateBrightnessLabel();
+      if (forceControls || !settingsDirty) {
+        brightness.value = data.brightness;
+        effect.value = data.effect;
+        updateBrightnessLabel();
+      }
 
       if (data.mode === "CHARGE") {
         footerText.textContent = "CHARGE mode: external USB 5V detected, the strip is forced off but the web interface stays available.";
       } else if (data.mode === "KEY_ACTIVE") {
-        footerText.textContent = "KEY_ACTIVE mode: key detected, effects run on GPIO6 PWM and strip brightness follows battery voltage.";
+        footerText.textContent = "KEY_ACTIVE mode: key detected, smooth effects run on GPIO6 PWM and strip brightness follows battery voltage.";
       } else {
-        footerText.textContent = "IDLE mode: no charger and no key, the strip is off and the device will enter deep sleep after a short delay.";
+        footerText.textContent = "IDLE mode: no charger and no key, the strip is off and the device will enter deep sleep after a short delay. Charger insert does not wake ESP32 from deep sleep.";
       }
     }
 
@@ -341,18 +393,28 @@
           effect: effect.value
         });
         const data = await requestJson(`/api/set?${params.toString()}`);
-        applyStatus(data);
+        settingsDirty = false;
+        applyStatus(data, { forceControls: true });
+        updateDirtyUi("Settings applied");
       } catch (error) {
+        settingsDirty = true;
+        updateDirtyUi();
         footerText.textContent = `Failed to apply settings: ${error.message}`;
       } finally {
         applyButton.disabled = false;
       }
     }
 
-    brightness.addEventListener("input", updateBrightnessLabel);
+    brightness.addEventListener("input", () => {
+      updateBrightnessLabel();
+      markSettingsDirty();
+    });
+    brightness.addEventListener("change", markSettingsDirty);
+    effect.addEventListener("change", markSettingsDirty);
     applyButton.addEventListener("click", applySettings);
 
     updateBrightnessLabel();
+    updateDirtyUi();
     refreshStatus();
     window.setInterval(refreshStatus, 2000);
   </script>

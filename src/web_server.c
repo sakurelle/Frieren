@@ -26,7 +26,7 @@ static esp_err_t send_status_json(httpd_req_t *req)
         sizeof(body),
         "{\"mode\":\"%s\",\"usb_present\":%s,\"key_inserted\":%s,\"light_enabled\":%s,"
         "\"brightness\":%u,\"effect\":\"%s\",\"pwm_available\":%s,"
-        "\"hardware_mode\":\"%s\",\"deep_sleep_enabled\":%s}",
+        "\"hardware_mode\":\"%s\",\"deep_sleep_enabled\":%s,\"charger_wakeup_enabled\":false}",
         app_state_mode_to_string(snapshot.mode),
         snapshot.usb_present ? "true" : "false",
         snapshot.key_inserted ? "true" : "false",

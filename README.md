@@ -1,6 +1,6 @@
 # Frieren
 
-`Frieren` is an ESP32-C3 PlatformIO + ESP-IDF project for controlling a battery-powered LED strip from a local Wi-Fi web interface. The strip is powered directly from the battery path (`TP4056 OUT+ / OUT-`), while ESP32-C3 drives the IRLZ44N gate with LEDC PWM for brightness and effects.
+`Frieren` is an ESP32-C3 PlatformIO + ESP-IDF project for controlling a battery-powered LED strip from a local Wi-Fi web interface. The strip is powered directly from the battery path (`TP4056 OUT+ / OUT-`), while ESP32-C3 drives the IRLZ44N gate with LEDC PWM for brightness and slow, smooth lighting effects.
 
 ## Hardware
 
@@ -11,7 +11,7 @@
 - Strip switching: IRLZ44N on the LED strip ground line
 - A single external Type-C port is used either for charging detection or for the physical key
 
-Because the strip is now powered directly from the battery, its maximum brightness depends on the current battery voltage.
+Because the strip is powered directly from the battery, its maximum brightness depends on the current battery voltage.
 
 ## GPIO wiring
 
@@ -25,7 +25,6 @@ Because the strip is now powered directly from the battery, its maximum brightne
   Type-C `5V` goes through a divider `100 kOhm / 150 kOhm`
   Divider midpoint goes to `GPIO7`
   If USB 5 V is present, `GPIO7 = HIGH`
-  The `150 kOhm` divider leg provides the external pull-down needed for wakeup by HIGH level
 - `GPIO6` -> IRLZ44N gate PWM for the LED strip
   `GPIO6` goes to Gate through `220 Ohm`
   Gate is pulled down to `GND` through `100 kOhm`
@@ -81,30 +80,42 @@ Frieren/
 ## Deep sleep
 
 - Deep sleep is enabled in firmware by default
-- The device goes to sleep when nothing is inserted into Type-C and the mode becomes `MODE_IDLE`
+- The device goes to sleep when the key is removed and charging is not connected
 - Before sleep, firmware sets PWM to `0`, stops the HTTP server and stops Wi-Fi
-- Wakeup sources:
+- The firmware logs raw `GPIO5` and `GPIO7` levels before entering sleep
+- Wakeup source is only one:
   key insert -> `GPIO5 LOW`
-  charger insert -> `GPIO7 HIGH`
 
 Important notes:
 
 - `GPIO5` must keep the external `100 kOhm` pull-up to `3.3 V` because wakeup is triggered by LOW level
-- `GPIO7` relies on the divider lower resistor (`150 kOhm` to `GND`) as the external pull-down because wakeup is triggered by HIGH level
-- If `GPIO7` does not support deep sleep wakeup on your exact ESP32-C3 board or routing, move `USB_PRESENT` to another wakeup-capable GPIO or disable deep sleep by setting `APP_DEEP_SLEEP_ENABLED 0`
-- If wakeup GPIO validation fails at runtime, firmware logs the reason and intentionally stays awake instead of entering deep sleep
+- Charging through Type-C may not wake ESP32 from deep sleep, and this is expected
+- TP4056 continues charging the battery fully in hardware without any ESP32 participation
+- `GPIO7` is used only for charger detection after ESP32 is already awake
+- If `GPIO5` is not valid for deep sleep wakeup on your exact board, firmware logs `KEY_SENSE GPIO is not valid for deep sleep wakeup; deep sleep disabled` and intentionally stays awake instead of sleeping
 
 ## Effects
 
 - `Static`
+  Constant light without smoothing delay
 - `Breath`
+  Very slow 8-10 second breathing wave
 - `Dragon Breath`
+  Long base cycle with soft rare surges
 - `Candle`
+  Calm, warm flicker with slow target changes
 - `Fire Flicker`
+  More active than candle, but still smooth and slow
 - `Strobe`
+  Reworked into a soft slow blink instead of hard flashing
 - `Pulse`
+  Long pulse with gentle attack and release
 - `Heartbeat`
+  Slower double-beat with softer peaks
 - `Fade In/Out`
+  Long smooth fade cycle
+
+All non-static effects are additionally smoothed in firmware before they are written to PWM, so transitions on the strip stay softer.
 
 ## Wi-Fi and web UI
 
@@ -126,9 +137,12 @@ Returned JSON:
   "brightness": 70,
   "effect": "breath",
   "hardware_mode": "battery_direct_led_pwm",
-  "deep_sleep_enabled": true
+  "deep_sleep_enabled": true,
+  "charger_wakeup_enabled": false
 }
 ```
+
+The web UI protects unsaved brightness/effect changes from being overwritten by background `/api/status` refreshes. Status cards keep updating every 2 seconds, but local form values stay untouched until the user applies them.
 
 Brightness and effect are stored in NVS, so they survive reboot.
 
